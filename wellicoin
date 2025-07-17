@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+contract WelliCoin is ERC20, AccessControl, Pausable {
+    // Roles (use keccak256 for constants)
+    bytes32 public constant DOCTOR_ROLE = keccak256("DOCTOR_ROLE");
+    bytes32 public constant PHARMACY_ROLE = keccak256("PHARMACY_ROLE");
+    bytes32 public constant GOVERNMENT_ROLE = keccak256("GOVERNMENT_ROLE");
+
+    // Nigerian Healthcare Data Structs
+    struct Patient {
+        string nin; // National Identity Number
+        uint256 lastCheckup;
+        bytes32 healthDataHash; // IPFS hash
+    }
+
+    struct Drug {
+        string nafdacId; // NAFDAC registration
+        address currentOwner;
+        bool isValid;
+    }
+
+    // Mappings
+    mapping(address => Patient) public patients;
+    mapping(string => Drug) public drugs;
+    mapping(address => uint256) public clinicRewards;
+
+    // Events
+    event PatientRegistered(address indexed wallet, string nin);
+    event DrugVerified(string nafdacId, address verifiedBy);
+    event TokensEarned(address patient, uint256 amount, string reason);
+
+    // Constants (Naira-pegged rewards)
+    uint256 public constant CHECKUP_REWARD = 50 * 10**18; // 50 WELLI ≈ ₦500
+    uint256 public constant VACCINE_REWARD = 100 * 10**18;
+
+    constructor() ERC20("WelliCoin", "WELLI") {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(GOVERNMENT_ROLE, msg.sender);
+        _mint(msg.sender, 100_000_000 * 10**18); // 100M initial supply
+    }
+
+    // ========== Core Functions ========== //
+    function registerPatient(
+        address _wallet, 
+        string memory _nin,
+        bytes32 _healthDataHash
+    ) public onlyRole(GOVERNMENT_ROLE) {
+        patients[_wallet] = Patient(_nin, block.timestamp, _healthDataHash);
+        emit PatientRegistered(_wallet, _nin);
+    }
+
+    function verifyDrug(
+        string memory _nafdacId, 
+        address _manufacturer
+    ) public onlyRole(GOVERNMENT_ROLE) {
+        drugs[_nafdacId] = Drug(_nafdacId, _manufacturer, true);
+        emit DrugVerified(_nafdacId, msg.sender);
+    }
+ mj
+    function rewardPatient(
+        address _patient,
+        uint256 _rewardType // 1=checkup, 2=vaccine
+    ) public onlyRole(DOCTOR_ROLE) {
+        if (_rewardType == 1) {
+            _mint(_patient, CHECKUP_REWARD);
+            emit TokensEarned(_patient, CHECKUP_REWARD, "Routine Checkup");
+        } else if (_rewardType == 2) {
+            _mint(_patient, VACCINE_REWARD);
+            emit TokensEarned(_patient, VACCINE_REWARD, "Vaccination");
+        }
+        clinicRewards[msg.sender] += 1;
+    }
+
+    // ========== Overrides ========== //
+    function _update(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override whenNotPaused {
+        super._update(from, to, amount);
+    }
+}
